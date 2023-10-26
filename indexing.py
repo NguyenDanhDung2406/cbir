@@ -5,7 +5,7 @@ import faiss
 import torch
 from torch.utils.data import DataLoader, SequentialSampler
 
-from src.feature_extraction import MyResnet50, MyVGG16, RGBHistogram, LBP
+from src.feature_extraction import MyResnet152, MyVGG16, MyResnet101, MyGCNModel
 from src.indexing import get_faiss_indexer
 from src.dataloader import MyDataLoader
 
@@ -16,7 +16,7 @@ feature_root = './dataset/feature'
 def main():
 
     parser = ArgumentParser()
-    parser.add_argument("--feature_extractor", required=True, type=str, default='Resnet50')
+    parser.add_argument("--feature_extractor", required=True, type=str, default='Resnet152')
     parser.add_argument("--device", required=False, type=str, default='cuda:0')
     parser.add_argument("--batch_size", required=False, type=int, default=64)
 
@@ -28,14 +28,14 @@ def main():
     batch_size = args.batch_size
 
     # Load module feature extraction 
-    if (args.feature_extractor == 'Resnet50'):
-        extractor = MyResnet50(device)
+    if (args.feature_extractor == 'Resnet152'):
+        extractor = MyResnet152(device)
     elif (args.feature_extractor == 'VGG16'):
         extractor = MyVGG16(device)
-    elif (args.feature_extractor == 'RGBHistogram'):
-        extractor = RGBHistogram(device)
-    elif (args.feature_extractor == 'LBP'):
-        extractor = LBP(device)
+    elif (args.feature_extractor == 'Resnet101'):
+        extractor = MyResnet101(device)
+    elif (args.feature_extractor == 'GCN'):
+        extractor = MyGCNModel(device)
     else:
         print("No matching model found")
         return
@@ -49,7 +49,6 @@ def main():
     for images, image_paths in dataloader:
         images = images.to(device)
         features = extractor.extract_features(images)
-        # print(features.shape)
         indexer.add(features)
     
     # Save features

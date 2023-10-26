@@ -7,7 +7,7 @@ from argparse import ArgumentParser
 import torch
 import faiss
 
-from src.feature_extraction import MyResnet50, MyVGG16, RGBHistogram, LBP
+from src.feature_extraction import MyResnet152, MyVGG16, MyResnet101, MyGCNModel
 from src.dataloader import get_transformation
 
 ACCEPTED_IMAGE_EXTS = ['.jpg', '.png']
@@ -29,7 +29,7 @@ def get_image_list(image_root):
 def main():
 
     parser = ArgumentParser()
-    parser.add_argument("--feature_extractor", required=True, type=str, default='Resnet50')
+    parser.add_argument("--feature_extractor", required=True, type=str, default='Resnet152')
     parser.add_argument("--device", required=False, type=str, default='cuda:0')
     parser.add_argument("--top_k", required=False, type=int, default=11)
     parser.add_argument("--crop", required=False, type=bool, default=False)
@@ -40,14 +40,14 @@ def main():
     args = parser.parse_args()
     device = torch.device(args.device)
 
-    if (args.feature_extractor == 'Resnet50'):
-        extractor = MyResnet50(device)
+    if (args.feature_extractor == 'Resnet152'):
+        extractor = MyResnet152(device)
     elif (args.feature_extractor == 'VGG16'):
         extractor = MyVGG16(device)
-    elif (args.feature_extractor == 'RGBHistogram'):
-        extractor = RGBHistogram(device)
-    elif (args.feature_extractor == 'LBP'):
-        extractor = LBP(device)
+    elif (args.feature_extractor == 'Resnet101'):
+        extractor = MyResnet101(device)
+    elif (args.feature_extractor == 'GCN'):
+        extractor = MyGCNModel(device)
     else:
         print("No matching model found")
         return

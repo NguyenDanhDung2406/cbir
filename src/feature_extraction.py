@@ -5,33 +5,58 @@ import torch
 import torch.nn as nn
 from torchvision import transforms
 import torchvision.models as models
+from torch_geometric.nn import GCNConv
 
-from skimage.feature import local_binary_pattern
 
-
-class MyResnet50(torch.nn.Module):
+class MyResnet101(torch.nn.Module):
     def __init__(self, device):
         super().__init__()
 
-        self.model = models.resnet50(weights='IMAGENET1K_V2')
-        # Get the layers of the model
+        self.model = models.resnet101(pretrained=True)  # Sử dụng pretrained ResNet-152
+        # Lấy các lớp của mô hình
         self.modules = list(self.model.children())[:-1]
         self.model = nn.Sequential(*self.modules)
         self.model = self.model.eval()
         self.model = self.model.to(device)
-        self.shape = 2048 # the length of the feature vector
+        self.shape = 2048  # Độ dài của vector đặc trưng
 
     def extract_features(self, image):
-        transform = transforms.Compose([transforms.Normalize(mean=[0.485, 0.456, 0.406], 
+        transform = transforms.Compose([transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                                             std=[0.229, 0.224, 0.225])])
         image = transform(image)
 
-        # Pass the image through the Resnet50 model and get the feature maps of the input image
+        # Truyền ảnh qua mô hình Resnet-152 và lấy ra feature map của ảnh đầu vào
         with torch.no_grad():
             feature = self.model(image)
             feature = torch.flatten(feature, start_dim=1)
 
-        # Return features to numpy array
+        # Trả về các đặc trưng dưới dạng mảng numpy
+        return feature.cpu().detach().numpy()
+    
+
+class MyResnet152(torch.nn.Module):
+    def __init__(self, device):
+        super().__init__()
+
+        self.model = models.resnet152(weights='IMAGENET1K_V2')  # Sử dụng pretrained ResNet-152
+        # Lấy các lớp của mô hình
+        self.modules = list(self.model.children())[:-1]
+        self.model = nn.Sequential(*self.modules)
+        self.model = self.model.eval()
+        self.model = self.model.to(device)
+        self.shape = 2048  # Độ dài của vector đặc trưng
+
+    def extract_features(self, image):
+        transform = transforms.Compose([transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                                            std=[0.229, 0.224, 0.225])])
+        image = transform(image)
+
+        # Truyền ảnh qua mô hình Resnet-152 và lấy ra feature map của ảnh đầu vào
+        with torch.no_grad():
+            feature = self.model(image)
+            feature = torch.flatten(feature, start_dim=1)
+
+        # Trả về các đặc trưng dưới dạng mảng numpy
         return feature.cpu().detach().numpy()
         
 class MyVGG16(torch.nn.Module):
@@ -55,57 +80,29 @@ class MyVGG16(torch.nn.Module):
 
         # Return features to numpy array
         return feature.cpu().detach().numpy()
+    
+class MyGCNModel(torch.nn.Module):
+    def __init__(self, num_features, num_classes, device):
+        super(MyGCNModel, self).__init__()
 
-class RGBHistogram():
-    def __init__(self, device):
-        self.shape = 768 # the length of the feature vector
+        # Tạo một lớp GCN với 2048 đầu vào và 512 đầu ra
+        self.conv1 = GCNConv(num_features, 512)
+        # Tạo một lớp GCN với 512 đầu vào và số lớp đầu ra tương ứng với số lớp của dữ liệu của bạn
+        self.conv2 = GCNConv(512, num_classes)
+        
+        self.device = device
+        self.shape = num_classes  # Độ dài của vector đặc trưng
 
-    def extract_features(self, image):
-        image = image.cpu().numpy()
-        features = []
-        for img in image:
-            # Convert to format when reading images from CV2
-            img *= 255
-            img = img.reshape(img.shape[1], img.shape[2], img.shape[0])
+    def extract_features(self, x, edge_index):
+        # Truyền dữ liệu qua lớp GCN đầu tiên
+        x = F.relu(self.conv1(x, edge_index))
+        # Truyền dữ liệu qua lớp GCN thứ hai và không áp dụng hàm kích hoạt ở đây
+        x = self.conv2(x, edge_index)
 
-            # Calculate the histogram of each color channel
-            hist_red = cv2.calcHist([img], [0], None, [256], [0, 256])
-            hist_green = cv2.calcHist([img], [1], None, [256], [0, 256])
-            hist_blue = cv2.calcHist([img], [2], None, [256], [0, 256])
+        return x
 
-            # Normalize histogram
-            cv2.normalize(hist_red, hist_red, 0, 1, cv2.NORM_MINMAX)
-            cv2.normalize(hist_green, hist_green, 0, 1, cv2.NORM_MINMAX)
-            cv2.normalize(hist_blue, hist_blue, 0, 1, cv2.NORM_MINMAX)
-            
-            # Merge histograms of color channels into a feature vector
-            feature_vector = np.concatenate((hist_red, hist_green, hist_blue))
-            feature_vector.resize(len(feature_vector))
-            features.append(feature_vector)
-        return np.array(features)
-
-class LBP():
-    def __init__(self, device):
-        self.shape = 26 # the length of the feature vector
-
-    def extract_features(self, image):
-        n_points = 24
-        radius = 3
-
-        image = image.cpu().numpy()
-        features = []
-        for img in image:
-            # Convert to format when reading images from CV2
-            img *= 255
-            img = img.reshape(img.shape[1], img.shape[2], img.shape[0])
-
-            # Convert to grayscale
-            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-            lbp = local_binary_pattern(gray, n_points, radius, method="default")
-            hist, _ = np.histogram(lbp.ravel(), bins=np.arange(0, n_points + 3), range=(0, n_points + 2))
-            hist = hist.astype("float32")
-            hist /= (hist.sum() + 1e-7)
-
-            features.append(hist)
-
-        return np.array(features)
+    def forward(self, x, edge_index):
+        # Khi bạn muốn sử dụng mô hình để dự đoán
+        with torch.no_grad():
+            x = self.extract_features(x, edge_index)
+        return x.cpu().detach().numpy()

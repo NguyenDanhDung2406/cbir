@@ -7,12 +7,12 @@ from PIL import Image
 import streamlit as st
 from streamlit_cropper import st_cropper
 
-from src.feature_extraction import MyVGG16, MyResnet50, RGBHistogram, LBP
+from src.feature_extraction import MyVGG16, MyResnet152, MyResnet101, MyGCNModel
 from src.dataloader import get_transformation
 
 st.set_page_config(layout="wide")
 
-device = torch.device('cpu')
+device = torch.device('cuda')
 image_root = './dataset/paris'
 feature_root = './dataset/feature'
 
@@ -29,12 +29,12 @@ def get_image_list(image_root):
 def retrieve_image(img, feature_extractor):
     if (feature_extractor == 'VGG16'):
         extractor = MyVGG16('cpu')
-    elif (feature_extractor == 'Resnet50'):
-        extractor = MyResnet50(device)
-    elif (feature_extractor == 'RGBHistogram'):
-        extractor = RGBHistogram(device)
-    elif (feature_extractor == 'LBP'):
-        extractor = LBP(device)
+    elif (feature_extractor == 'Resnet152'):
+        extractor = MyResnet152(device)
+    elif (feature_extractor == 'Resnet101'):
+        extractor = MyResnet101(device)
+    elif (feature_extractor == 'GCN'):
+        extractor = MyGCNModel(device)
 
     transform = get_transformation()
 
@@ -58,7 +58,7 @@ def main():
         st.header('QUERY')
 
         st.subheader('Choose feature extractor')
-        option = st.selectbox('.', ( 'Resnet50', 'VGG16', 'RGBHistogram', 'LBP'))
+        option = st.selectbox('.', ( 'Resnet152', 'VGG16', 'Resnet101', 'GCN'))
 
         st.subheader('Upload image')
         img_file = st.file_uploader(label='.', type=['png', 'jpg'])
