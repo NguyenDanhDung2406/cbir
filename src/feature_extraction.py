@@ -5,14 +5,17 @@ import torch
 import torch.nn as nn
 from torchvision import transforms
 import torchvision.models as models
+import torch.nn.functional as F
 from torch_geometric.nn import GCNConv
+from torch_geometric.nn import GraphSAGE
+
 
 
 class MyResnet101(torch.nn.Module):
     def __init__(self, device):
         super().__init__()
 
-        self.model = models.resnet101(pretrained=True)  # Sử dụng pretrained ResNet-152
+        self.model = models.resnet101(weights='IMAGENET1K_V2')  # Sử dụng pretrained ResNet-152
         # Lấy các lớp của mô hình
         self.modules = list(self.model.children())[:-1]
         self.model = nn.Sequential(*self.modules)
@@ -82,27 +85,36 @@ class MyVGG16(torch.nn.Module):
         return feature.cpu().detach().numpy()
     
 class MyGCNModel(torch.nn.Module):
-    def __init__(self, num_features, num_classes, device):
+    def __init__(self, device):
         super(MyGCNModel, self).__init__()
 
-        # Tạo một lớp GCN với 2048 đầu vào và 512 đầu ra
-        self.conv1 = GCNConv(num_features, 512)
-        # Tạo một lớp GCN với 512 đầu vào và số lớp đầu ra tương ứng với số lớp của dữ liệu của bạn
-        self.conv2 = GCNConv(512, num_classes)
-        
         self.device = device
-        self.shape = num_classes  # Độ dài của vector đặc trưng
+        self.in_features = 2048
+        self.out_features = 2048
+        self.num_layers = 2
+        self.aggregation = "mean"
 
-    def extract_features(self, x, edge_index):
-        # Truyền dữ liệu qua lớp GCN đầu tiên
-        x = F.relu(self.conv1(x, edge_index))
-        # Truyền dữ liệu qua lớp GCN thứ hai và không áp dụng hàm kích hoạt ở đây
-        x = self.conv2(x, edge_index)
+        self.convs = nn.ModuleList()
+          # Define num_layers here
+        num_layers = 2  # Example value
 
-        return x
+        self.convs = nn.ModuleList()
+        for i in range(num_layers):
+            if i == 0:
+                self.convs.append(GraphSAGE(self.in_features, self.out_features, num_layers=num_layers))  # Add num_layers argument
+            else:
+                self.convs.append(GraphSAGE(self.out_features, self.out_features, num_layers=num_layers))  # Add num_layers argument
+
 
     def forward(self, x, edge_index):
-        # Khi bạn muốn sử dụng mô hình để dự đoán
-        with torch.no_grad():
-            x = self.extract_features(x, edge_index)
-        return x.cpu().detach().numpy()
+        x = x.to(self.device)  # Ensure data is on the correct device
+        for i in range(self.num_layers):
+            x = self.convs[i](x, edge_index)
+            if self.aggregation == "mean":
+                x = x.mean(dim=1)
+        return x
+    
+    def extract_features(self, x, edge_index):
+        x = x.to(self.device)  # Ensure data is on the correct device
+        x = self.forward(x, edge_index)
+        return x.cpu().detach().numpy()  # Return NumPy array for compatibility

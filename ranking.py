@@ -9,6 +9,7 @@ import faiss
 
 from src.feature_extraction import MyResnet152, MyVGG16, MyResnet101, MyGCNModel
 from src.dataloader import get_transformation
+import module_name 
 
 ACCEPTED_IMAGE_EXTS = ['.jpg', '.png']
 
@@ -38,7 +39,7 @@ def main():
     start = time.time()
 
     args = parser.parse_args()
-    device = torch.device(args.device)
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
     if (args.feature_extractor == 'Resnet152'):
         extractor = MyResnet152(device)

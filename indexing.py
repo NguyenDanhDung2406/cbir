@@ -24,7 +24,7 @@ def main():
     start = time.time()
 
     args = parser.parse_args()
-    device = torch.device(args.device)
+    device = torch.device('cuda:0')
     batch_size = args.batch_size
 
     # Load module feature extraction 

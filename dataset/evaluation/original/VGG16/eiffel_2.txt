@@ -8,4 +8,4 @@ paris_pompidou_000533
 paris_general_001200
 paris_eiffel_000128
 paris_sacrecoeur_000392
-paris_defense_000589
+paris_museedorsay_001112

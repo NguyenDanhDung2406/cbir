@@ -7,5 +7,5 @@ paris_museedorsay_000904
 paris_invalides_000451
 paris_sacrecoeur_000380
 paris_defense_000589
-paris_general_000002
 paris_museedorsay_001112
+paris_pompidou_000580

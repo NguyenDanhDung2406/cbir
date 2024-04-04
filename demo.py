@@ -12,7 +12,7 @@ from src.dataloader import get_transformation
 
 st.set_page_config(layout="wide")
 
-device = torch.device('cuda')
+device = torch.device('cuda:0')
 image_root = './dataset/paris'
 feature_root = './dataset/feature'
 
