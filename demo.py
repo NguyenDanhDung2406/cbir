@@ -28,7 +28,7 @@ def get_image_list(image_root):
 
 def retrieve_image(img, feature_extractor):
     if (feature_extractor == 'VGG16'):
-        extractor = MyVGG16('cpu')
+        extractor = MyVGG16(device)
     elif (feature_extractor == 'Resnet152'):
         extractor = MyResnet152(device)
     elif (feature_extractor == 'Resnet101'):

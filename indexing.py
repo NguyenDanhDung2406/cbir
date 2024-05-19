@@ -24,7 +24,7 @@ def main():
     start = time.time()
 
     args = parser.parse_args()
-    device = torch.device('cuda:0')
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     batch_size = args.batch_size
 
     # Load module feature extraction 

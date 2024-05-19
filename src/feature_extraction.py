@@ -6,8 +6,11 @@ import torch.nn as nn
 from torchvision import transforms
 import torchvision.models as models
 import torch.nn.functional as F
+import torchvision.transforms as transforms
+from torchvision import models
+from PIL import Image  # Import Image module from PIL package
 from torch_geometric.nn import GCNConv
-from torch_geometric.nn import GraphSAGE
+from torch_geometric.data import Data
 
 
 
@@ -67,54 +70,120 @@ class MyVGG16(torch.nn.Module):
         super().__init__()
 
         self.model = models.vgg16(weights='IMAGENET1K_FEATURES')
-        self.model = self.model.eval()
-        self.model = self.model.to(device)
-        self.shape = 25088 # the length of the feature vector
+        self.model = self.model.features
+        self.shape = 25088
+        self.device = device
+
+        self.transform = transforms.Compose([
+            transforms.Resize((224, 224)),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        ])
+
+        self.model = self.model.eval().to(device)
+
+    def preprocess_image(self, image):
+        # Kiểm tra xem image có phải là tensor không
+        if not isinstance(image, torch.Tensor):
+            # Chuyển đổi thành tensor nếu không phải là tensor
+            image = self.transform(image).unsqueeze(0).to(self.device)
+        else:
+            image = image.to(self.device)
+
+        return image
 
     def extract_features(self, image):
-        transform = transforms.Compose([transforms.Normalize(mean=[0.48235, 0.45882, 0.40784], 
-                                    std=[0.00392156862745098, 0.00392156862745098, 0.00392156862745098])])
-        image = transform(image)
+        image = self.preprocess_image(image)
 
-        # Feed the image into the model for feature extraction
         with torch.no_grad():
-            feature = self.model.features(image)
+            feature = self.model(image)
             feature = torch.flatten(feature, start_dim=1)
 
-        # Return features to numpy array
         return feature.cpu().detach().numpy()
     
-class MyGCNModel(torch.nn.Module):
+class MyGCN(nn.Module):
+    def __init__(self, input_dim, hidden_dim, output_dim):
+        super(MyGCN, self).__init__()
+        self.conv1 = GCNConv(input_dim, hidden_dim)
+        self.conv2 = GCNConv(hidden_dim, output_dim)
+        
+    def forward(self, x, edge_index):
+        x = self.conv1(x, edge_index)
+        x = F.relu(x)
+        x = self.conv2(x, edge_index)
+        return x
+
+class MyGCNModel(nn.Module):
     def __init__(self, device):
         super(MyGCNModel, self).__init__()
-
         self.device = device
-        self.in_features = 2048
-        self.out_features = 2048
-        self.num_layers = 2
-        self.aggregation = "mean"
 
-        self.convs = nn.ModuleList()
-          # Define num_layers here
-        num_layers = 2  # Example value
+        # Define a transformation layer to convert patches into features
+        self.patch_to_feature = nn.Linear(3 * 16 * 16, 2048).to(device)
 
-        self.convs = nn.ModuleList()
-        for i in range(num_layers):
-            if i == 0:
-                self.convs.append(GraphSAGE(self.in_features, self.out_features, num_layers=num_layers))  # Add num_layers argument
-            else:
-                self.convs.append(GraphSAGE(self.out_features, self.out_features, num_layers=num_layers))  # Add num_layers argument
+        # Define GCN
+        self.gcn = MyGCN(input_dim=2048, hidden_dim=1024, output_dim=512).to(device)
+        self.shape = 512  # Length of the feature vector after GCN
 
+    def extract_features(self, image):
+        transform = transforms.Compose([
+            transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                 std=[0.229, 0.224, 0.225])
+        ])
+        image = transform(image).to(self.device)
 
-    def forward(self, x, edge_index):
-        x = x.to(self.device)  # Ensure data is on the correct device
-        for i in range(self.num_layers):
-            x = self.convs[i](x, edge_index)
-            if self.aggregation == "mean":
-                x = x.mean(dim=1)
-        return x
-    
-    def extract_features(self, x, edge_index):
-        x = x.to(self.device)  # Ensure data is on the correct device
-        x = self.forward(x, edge_index)
-        return x.cpu().detach().numpy()  # Return NumPy array for compatibility
+        # Divide the image into patches (16x16)
+        patches = image.unfold(2, 16, 16).unfold(3, 16, 16)
+        patches = patches.contiguous().view(image.size(0), 3, -1, 16, 16)
+        patches = patches.permute(0, 2, 1, 3, 4).contiguous().view(-1, 3, 16, 16)
+
+        # Convert patches into features
+        patches = patches.view(patches.size(0), -1).to(self.device)
+        feature = self.patch_to_feature(patches)
+
+        # Create edge_index for the image with the size of the patches
+        edge_index = self.create_edge_index(image.size(2), image.size(3), 16).to(self.device)
+        data = Data(x=feature, edge_index=edge_index)
+
+        # Pass data through GCN
+        gcn_feature = self.gcn(data.x, data.edge_index)
+
+        # Pooling to create a single feature for the entire image
+        gcn_feature = gcn_feature.view(image.size(0), -1, self.shape)  
+        gcn_feature = gcn_feature.mean(dim=1)  
+
+        # Return features as a numpy array
+        return gcn_feature.cpu().detach().numpy()
+
+    def create_edge_index(self, h, w, patch_size):
+        edge_index = []
+        num_patches_x = w // patch_size
+        num_patches_y = h // patch_size
+
+        def get_index(x, y):
+            return y * num_patches_x + x
+
+        for y in range(num_patches_y):
+            for x in range(num_patches_x):
+                current_index = get_index(x, y)
+                if x > 0:
+                    edge_index.append([current_index, get_index(x - 1, y)])  # left
+                    edge_index.append([get_index(x - 1, y), current_index])  # bidirectional
+                if x < num_patches_x - 1:
+                    edge_index.append([current_index, get_index(x + 1, y)])  # right
+                    edge_index.append([get_index(x + 1, y), current_index])  # bidirectional
+                if y > 0:
+                    edge_index.append([current_index, get_index(x, y - 1)])  # up
+                    edge_index.append([get_index(x, y - 1), current_index])  # bidirectional
+                if y < num_patches_y - 1:
+                    edge_index.append([current_index, get_index(x, y + 1)])  # down
+                    edge_index.append([get_index(x, y + 1), current_index])  # bidirectional
+
+        edge_index = torch.tensor(edge_index, dtype=torch.long).t().contiguous()
+        
+        # Kiểm tra kích thước của edge_index
+        if edge_index.numel() == 0:
+            raise ValueError("edge_index is empty. Check the create_edge_index function.")
+        print("edge_index size:", edge_index.size())
+        
+        return edge_index

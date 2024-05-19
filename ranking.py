@@ -10,6 +10,7 @@ import faiss
 from src.feature_extraction import MyResnet152, MyVGG16, MyResnet101, MyGCNModel
 from src.dataloader import get_transformation
 import module_name 
+import torchvision.transforms as transforms
 
 ACCEPTED_IMAGE_EXTS = ['.jpg', '.png']
 
@@ -26,6 +27,14 @@ def get_image_list(image_root):
         image_list.append(image_path[:-4])
     image_list = sorted(image_list, key = lambda x: x)
     return image_list
+
+def get_transformation():
+    # Function to return the transformation for images
+    return transforms.Compose([
+        transforms.Resize((224, 224)),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+    ])
 
 def main():
 
@@ -54,6 +63,7 @@ def main():
         return
 
     img_list = get_image_list(image_root)
+    print(f"Total images: {len(img_list)}")  # Debug: Print the total number of images
     transform = get_transformation()
 
     for path_file in os.listdir(query_root):
@@ -78,12 +88,20 @@ def main():
 
             indexer = faiss.read_index(feature_root + '/' + args.feature_extractor + '.index.bin')
 
-            _, indices = indexer.search(feat, k=args.top_k)  
+            _, indices = indexer.search(feat, k=args.top_k)
+            print(f"Indices: {indices[0]}")  # Debug: Print the indices returned by the search
 
             for index in indices[0]:
-                rank_list.append(str(img_list[index]))
+                if index < len(img_list):
+                    rank_list.append(str(img_list[index]))
+                else:
+                    print(f"Warning: index {index} out of range for img_list of size {len(img_list)}")  # Debug: Warning message
 
-            with open(evaluate_root + '/' + path_crop + '/' + args.feature_extractor + '/' + path_file[:-10] + '.txt', "w") as file:
+            output_dir = os.path.join(evaluate_root, path_crop, args.feature_extractor)
+            os.makedirs(output_dir, exist_ok=True)
+            output_file = os.path.join(output_dir, path_file[:-10] + '.txt')
+
+            with open(output_file, "w") as file:
                 file.write("\n".join(rank_list))
 
     end = time.time()
