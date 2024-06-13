@@ -7,7 +7,7 @@ from argparse import ArgumentParser
 import torch
 import faiss
 
-from src.feature_extraction import MyResnet152, MyVGG16, MyResnet101, MyGCNModel
+from src.feature_extraction import MyResnet152, MyVGG19, MyEfficientNetB7, MyAlexNet
 from src.dataloader import get_transformation
 import module_name 
 import torchvision.transforms as transforms
@@ -52,12 +52,12 @@ def main():
 
     if (args.feature_extractor == 'Resnet152'):
         extractor = MyResnet152(device)
-    elif (args.feature_extractor == 'VGG16'):
-        extractor = MyVGG16(device)
-    elif (args.feature_extractor == 'Resnet101'):
-        extractor = MyResnet101(device)
-    elif (args.feature_extractor == 'GCN'):
-        extractor = MyGCNModel(device)
+    elif (args.feature_extractor == 'VGG19'):
+        extractor = MyVGG19(device)
+    elif (args.feature_extractor == 'EfficientNetB7'):
+        extractor = MyEfficientNetB7(device)
+    elif (args.feature_extractor == 'AlexNet'):
+        extractor = MyAlexNet(device)
     else:
         print("No matching model found")
         return

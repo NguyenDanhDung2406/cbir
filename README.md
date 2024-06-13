@@ -6,7 +6,7 @@
 
 ## Introduction
 
-This is my project built for the Content-based Image Retrieval problem. In this project, I use the algorithm of indexing and searching Faiss (Facebook). Simultaneously combine many feature extraction methods for comparison and evaluation (Resnet101, Local Binary Pattern, VGG16, Resnet152).
+This is my project built for the Content-based Image Retrieval problem. In this project, I use the algorithm of indexing and searching Faiss (Facebook). Simultaneously combine many feature extraction methods for comparison and evaluation (EfficientNetB7, Local Binary Pattern, VGG19, Resnet152).
 
 **Problem**
 
@@ -17,7 +17,7 @@ This is my project built for the Content-based Image Retrieval problem. In this 
   <img src=diagram.png/>
 </p>
 
-I use the [faiss](https://github.com/facebookresearch/faiss.git) library created by Facebook. The weights of the VGG16 and Resnet152 networks are taken from the pre-trained model of [torchvision.models](https://pytorch.org/vision/stable/models.html).
+I use the [faiss](https://github.com/facebookresearch/faiss.git) library created by Facebook. The weights of the VGG19 and Resnet152 networks are taken from the pre-trained model of [torchvision.models](https://pytorch.org/vision/stable/models.html).
 
 ## Prepare the environment
 
@@ -48,24 +48,24 @@ Main-folder/
 ├── dataset/ 
 │   ├── evaluation
 |   |   ├── crop
-|   |   |   ├── GCN
+|   |   |   ├── AlexNet
 |   |   |   |   ├── defense_1.txt
 |   |   |   |   ├── eiffel_1.txt
 |   |   |   |   └── ...
 |   |   |   ├── Resnet152
 |   |   |   |   └── ...
-|   |   |   ├── Resnet101
+|   |   |   ├── EfficientNetB7
 |   |   |   |   └── ...
-|   |   |   └── VGG16
+|   |   |   └── VGG19
 |   |   |       └── ...
 |   |   └── original
 |   |       └── ...
 |   |
 │   ├── feature
-|   |   ├── GCN.index.bin
+|   |   ├── AlexNet.index.bin
 |   |   ├── Resnet152.index.bin
-|   |   ├── Resnet101.index.bin
-|   |   └── VGG16.index.bin
+|   |   ├── EfficientNetB7.index.bin
+|   |   └── VGG19.index.bin
 |   |   
 |   ├── groundtruth
 |   |   ├── defense_1_good.txt
@@ -104,7 +104,7 @@ Evaluation on query set
     
 ### Addition 
 
-You can modify the config like feature_extractor (Resnet101, GCN, VGG16, Resnet152), batch_size, top_k, ...
+You can modify the config like feature_extractor (EfficientNetB7, AlexNet, VGG19, Resnet152), batch_size, top_k, ...
 
 ## Reference
 

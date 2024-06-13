@@ -5,16 +5,14 @@ import faiss
 import torch
 from torch.utils.data import DataLoader, SequentialSampler
 
-from src.feature_extraction import MyResnet152, MyVGG16, MyResnet101, MyGCNModel
+from src.feature_extraction import MyResnet152, MyVGG19, MyEfficientNetB7, MyAlexNet
 from src.indexing import get_faiss_indexer
 from src.dataloader import MyDataLoader
 
 image_root = './dataset/paris'
 feature_root = './dataset/feature'
 
-
 def main():
-
     parser = ArgumentParser()
     parser.add_argument("--feature_extractor", required=True, type=str, default='Resnet152')
     parser.add_argument("--device", required=False, type=str, default='cuda:0')
@@ -28,21 +26,21 @@ def main():
     batch_size = args.batch_size
 
     # Load module feature extraction 
-    if (args.feature_extractor == 'Resnet152'):
+    if args.feature_extractor == 'Resnet152':
         extractor = MyResnet152(device)
-    elif (args.feature_extractor == 'VGG16'):
-        extractor = MyVGG16(device)
-    elif (args.feature_extractor == 'Resnet101'):
-        extractor = MyResnet101(device)
-    elif (args.feature_extractor == 'GCN'):
-        extractor = MyGCNModel(device)
+    elif args.feature_extractor == 'VGG19':
+        extractor = MyVGG19(device)
+    elif args.feature_extractor == 'EfficientNetB7':
+        extractor = MyEfficientNetB7(device)
+    elif args.feature_extractor == 'AlexNet':
+        extractor = MyAlexNet(device)
     else:
         print("No matching model found")
         return
 
     dataset = MyDataLoader(image_root)
     sampler = SequentialSampler(dataset)
-    dataloader = DataLoader(dataset,batch_size=batch_size,sampler=sampler)
+    dataloader = DataLoader(dataset, batch_size=batch_size, sampler=sampler)
 
     indexer = get_faiss_indexer(extractor.shape)
 

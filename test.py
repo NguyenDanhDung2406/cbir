@@ -6,7 +6,7 @@ from argparse import ArgumentParser
 import torch
 import faiss
 
-from src.feature_extraction import MyResnet152, MyVGG16, MyResnet101, MyGCNModel
+from src.feature_extraction import MyResnet152, MyVGG19, MyEfficientNetB7, MyAlexNet
 from src.dataloader import get_transformation
 
 ACCEPTED_IMAGE_EXTS = ['.jpg', '.png']
@@ -29,7 +29,7 @@ def get_image_list(image_root):
 def main():
 
     parser = ArgumentParser()
-    parser.add_argument("--feature_extractor", required=True, type=str, default='VGG16')
+    parser.add_argument("--feature_extractor", required=True, type=str, default='VGG19')
     parser.add_argument("--device", required=False, type=str, default='cuda:0')
     parser.add_argument("--top_k", required=False, type=int, default=11)
     parser.add_argument("--test_image_path", required=False, type=str, default='./dataset/paris/paris_triomphe_001112.jpg')
@@ -42,12 +42,12 @@ def main():
 
     if (args.feature_extractor == 'Resnet152'):
         extractor = MyResnet152(device)
-    elif (args.feature_extractor == 'VGG16'):
-        extractor = MyVGG16(device)
-    elif (args.feature_extractor == 'Resnet101'):
-        extractor = MyResnet101(device)
-    elif (args.feature_extractor == 'GCN'):
-        extractor = MyGCNModel(device)
+    elif (args.feature_extractor == 'VGG19'):
+        extractor = MyVGG19(device)
+    elif (args.feature_extractor == 'EfficientNetB7'):
+        extractor = MyEfficientNetB7(device)
+    elif (args.feature_extractor == 'AlexNet'):
+        extractor = MyAlexNet(device)
     else:
         print("No matching model found")
         return

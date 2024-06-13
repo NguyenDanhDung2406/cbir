@@ -7,7 +7,7 @@ from PIL import Image
 import streamlit as st
 from streamlit_cropper import st_cropper
 
-from src.feature_extraction import MyVGG16, MyResnet152, MyResnet101, MyGCNModel
+from src.feature_extraction import MyVGG19, MyResnet152, MyEfficientNetB7, MyAlexNet
 from src.dataloader import get_transformation
 
 st.set_page_config(layout="wide")
@@ -27,14 +27,14 @@ def get_image_list(image_root):
     return image_list
 
 def retrieve_image(img, feature_extractor):
-    if (feature_extractor == 'VGG16'):
-        extractor = MyVGG16(device)
+    if (feature_extractor == 'VGG19'):
+        extractor = MyVGG19(device)
     elif (feature_extractor == 'Resnet152'):
         extractor = MyResnet152(device)
-    elif (feature_extractor == 'Resnet101'):
-        extractor = MyResnet101(device)
-    elif (feature_extractor == 'GCN'):
-        extractor = MyGCNModel(device)
+    elif (feature_extractor == 'EfficientNetB7'):
+        extractor = MyEfficientNetB7(device)
+    elif (feature_extractor == 'AlexNet'):
+        extractor = MyAlexNet(device)
 
     transform = get_transformation()
 
@@ -58,7 +58,7 @@ def main():
         st.header('QUERY')
 
         st.subheader('Choose feature extractor')
-        option = st.selectbox('.', ( 'Resnet152', 'VGG16', 'Resnet101', 'GCN'))
+        option = st.selectbox('.', ( 'Resnet152', 'VGG19', 'EfficientNetB7', 'AlexNet'))
 
         st.subheader('Upload image')
         img_file = st.file_uploader(label='.', type=['png', 'jpg'])
