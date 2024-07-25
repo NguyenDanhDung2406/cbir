@@ -7,7 +7,7 @@ from argparse import ArgumentParser
 import torch
 import faiss
 
-from src.feature_extraction import MyResnet152, MyVGG19, MyEfficientNetB7, MyAlexNet
+from src.feature_extraction import MyGCNModel, MyResnet152, MyVGG19, MyEfficientNetB7, MyAlexNet, PretrainedGCNKNN
 from src.dataloader import get_transformation
 import module_name 
 import torchvision.transforms as transforms
@@ -58,6 +58,8 @@ def main():
         extractor = MyEfficientNetB7(device)
     elif (args.feature_extractor == 'AlexNet'):
         extractor = MyAlexNet(device)
+    elif (args.feature_extractor == 'GCN'):
+        extractor = PretrainedGCNKNN(device)
     else:
         print("No matching model found")
         return
@@ -86,7 +88,13 @@ def main():
             image_tensor = image_tensor.unsqueeze(0).to(device)
             feat = extractor.extract_features(image_tensor)
 
+            print(f"Feature vector shape: {feat.shape}")
+           
+            print(f"args.feature_extractor {args.feature_extractor}")
+
             indexer = faiss.read_index(feature_root + '/' + args.feature_extractor + '.index.bin')
+
+            print(f"Index dimensionality: {indexer.d}")
 
             _, indices = indexer.search(feat, k=args.top_k)
             print(f"Indices: {indices[0]}")  # Debug: Print the indices returned by the search

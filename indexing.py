@@ -5,7 +5,7 @@ import faiss
 import torch
 from torch.utils.data import DataLoader, SequentialSampler
 
-from src.feature_extraction import MyResnet152, MyVGG19, MyEfficientNetB7, MyAlexNet
+from src.feature_extraction import MyGCNModel, MyResnet152, MyVGG19, MyEfficientNetB7, MyAlexNet, PretrainedGCNKNN
 from src.indexing import get_faiss_indexer
 from src.dataloader import MyDataLoader
 
@@ -34,6 +34,8 @@ def main():
         extractor = MyEfficientNetB7(device)
     elif args.feature_extractor == 'AlexNet':
         extractor = MyAlexNet(device)
+    elif args.feature_extractor == 'GCN':
+        extractor = PretrainedGCNKNN(device)
     else:
         print("No matching model found")
         return

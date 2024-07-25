@@ -1,17 +1,12 @@
-import numpy as np
-import cv2
-
 import torch
 import torch.nn as nn
-from torchvision import transforms
-import torchvision.models as models
 import torch.nn.functional as F
-import torchvision.transforms as transforms
-from torchvision import models
-from PIL import Image  # Import Image module from PIL package
-from torch_geometric.nn import GCNConv
-from torch_geometric.data import Data
-from torchvision.models import inception_v3
+from torch_geometric.nn import GCNConv, global_mean_pool, SAGEConv, GATConv, global_max_pool,  knn_graph
+from torch_geometric.data import Data, Batch
+from torchvision import models, transforms
+from sklearn.neighbors import NearestNeighbors
+import numpy as np
+from torchvision.models import resnet50
 
 
 class MyEfficientNetB7(torch.nn.Module):
@@ -156,113 +151,152 @@ class MyAlexNet(torch.nn.Module):
         return features.cpu().detach().numpy()
 
 
-class MyGCN(nn.Module):
-    def __init__(self, input_dim, hidden_dim, output_dim, num_layers=2):
-        super(MyGCN, self).__init__()
-        self.conv1 = GCNConv(input_dim, hidden_dim)
-        self.convs = nn.ModuleList([GCNConv(hidden_dim, hidden_dim) for _ in range(num_layers - 2)])
-        self.conv2 = GCNConv(hidden_dim, output_dim)
-        
-    def forward(self, x, edge_index):
-        x = self.conv1(x, edge_index)
-        x = F.relu(x)
-        for conv in self.convs:
-            x = conv(x, edge_index)
-            x = F.relu(x)
-        x = self.conv2(x, edge_index)
-        return x
-
 class MyGCNModel(nn.Module):
     def __init__(self, device):
         super(MyGCNModel, self).__init__()
         self.device = device
-
-        # Define a transformation layer to convert patches into features
-        self.patch_to_feature = nn.Linear(3 * 16 * 16, 2048).to(device)
-
-        # Define GCN
-        self.gcn = MyGCN(input_dim=2048, hidden_dim=1024, output_dim=512).to(device)
-        self.shape = 512  # Length of the feature vector after GCN
-
-    def extract_features(self, image):
-        transform = transforms.Compose([
-            transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                                 std=[0.229, 0.224, 0.225])
-        ])
-        image = transform(image).to(self.device)
-
-        # Divide the image into patches (16x16)
-        patches = image.unfold(2, 16, 16).unfold(3, 16, 16)
-        patches = patches.contiguous().view(image.size(0), 3, -1, 16, 16)
-        patches = patches.permute(0, 2, 1, 3, 4).contiguous().view(-1, 3, 16, 16)
-
-        # Convert patches into features
-        patches = patches.view(patches.size(0), -1).to(self.device)
-        feature = self.patch_to_feature(patches)
-
-        # Create edge_index for the image with the size of the patches
-        edge_index = self.create_edge_index(image.size(2), image.size(3), 16).to(self.device)
-        data = Data(x=feature, edge_index=edge_index)
-
-        # Pass data through GCN
-        gcn_feature = self.gcn(data.x, data.edge_index)
-
-        # Pooling to create a single feature for the entire image
-        gcn_feature = gcn_feature.view(image.size(0), -1, self.shape)  
-        gcn_feature = gcn_feature.mean(dim=1)  
-
-        # Return features as a numpy array
-        return gcn_feature.cpu().detach().numpy()
-
-    def create_edge_index(self, h, w, patch_size):
-        edge_index = []
-        num_patches_x = w // patch_size
-        num_patches_y = h // patch_size
-
-        def get_index(x, y):
-            return y * num_patches_x + x
-
-        def get_valid_neighbor(x, y, direction):
-            if direction == "left" and x > 0:
-                return get_index(x - 1, y)
-            elif direction == "right" and x < num_patches_x - 1:
-                return get_index(x + 1, y)
-            elif direction == "up" and y > 0:
-                return get_index(x, y - 1)
-            elif direction == "down" and y < num_patches_y - 1:
-                return get_index(x, y + 1)
-            else:
-                return None  # Indicate invalid neighbor
-
-        for y in range(num_patches_y):
-            for x in range(num_patches_x):
-                current_index = get_index(x, y)
-                left_neighbor = get_valid_neighbor(x, y, "left")
-                right_neighbor = get_valid_neighbor(x, y, "right")
-                top_neighbor = get_valid_neighbor(x, y, "up")
-                bottom_neighbor = get_valid_neighbor(x, y, "down")
-
-                if left_neighbor is not None:
-                    edge_index.append([current_index, left_neighbor])
-                    edge_index.append([left_neighbor, current_index])  # bidirectional
-
-                if right_neighbor is not None:
-                    edge_index.append([current_index, right_neighbor])
-                    edge_index.append([right_neighbor, current_index])  # bidirectional
-
-                if top_neighbor is not None:
-                    edge_index.append([current_index, top_neighbor])
-                    edge_index.append([top_neighbor, current_index])  # bidirectional
-
-                if bottom_neighbor is not None:
-                    edge_index.append([current_index, bottom_neighbor])
-                    edge_index.append([bottom_neighbor, current_index])  # bidirectional
-
-        edge_index = torch.tensor(edge_index, dtype=torch.long).t().contiguous()
         
-        # Kiểm tra kích thước của edge_index
-        if edge_index.numel() == 0:
-            raise ValueError("edge_index is empty. Check the create_edge_index function.")
-        print("edge_index size:", edge_index.size())
+        self.conv1 = GCNConv(5, 64).to(device)
+        self.conv2 = SAGEConv(64, 128).to(device)
+        self.conv3 = GATConv(128, 256, heads=4, concat=False).to(device)
+        self.conv4 = GCNConv(256, 512).to(device)
+        
+        # Add batch normalization
+        self.bn1 = nn.BatchNorm1d(64).to(device)
+        self.bn2 = nn.BatchNorm1d(128).to(device)
+        self.bn3 = nn.BatchNorm1d(256).to(device)
+        self.bn4 = nn.BatchNorm1d(512).to(device)
+        
+        # Add dropout for regularization
+        self.dropout = nn.Dropout(0.3)
+        
+        # Increase the size of the final feature vector
+        self.fc = nn.Linear(1024, 1024).to(device)
+        self.shape = 1024
+
+    def forward(self, x, edge_index, batch):
+        x = F.relu(self.bn1(self.conv1(x, edge_index)))
+        x = self.dropout(x)
+        x = F.relu(self.bn2(self.conv2(x, edge_index)))
+        x = self.dropout(x)
+        x = F.relu(self.bn3(self.conv3(x, edge_index)))
+        x = self.dropout(x)
+        x = F.relu(self.bn4(self.conv4(x, edge_index)))
+        
+        # Sử dụng kết hợp nhiều loại pooling
+        x1 = global_mean_pool(x, batch)
+        x2 = global_max_pool(x, batch)
+        x = torch.cat([x1, x2], dim=1)
+        
+        x = self.fc(x)
+        return x
+
+
+
+    def extract_features(self, images):
+        features = []
+        for image in images:
+            # Convert image to graph
+            x, edge_index = self.image_to_graph(image)
+            x = x.to(self.device)
+            edge_index = edge_index.to(self.device)
+            batch = torch.zeros(x.size(0), dtype=torch.long).to(self.device)
+            
+            # Extract features
+            with torch.no_grad():
+                feature = self(x, edge_index, batch)
+            features.append(feature.cpu().numpy().flatten())  # Flatten feature vector
+        return np.array(features)
+
+    def image_to_graph(self, image):
+        height, width = image.shape[1:]
+        x = image.view(3, -1).t()
+        
+        edge_index = []
+        for i in range(height):
+            for j in range(width):
+                node = i * width + j
+                # Kết nối 8 điểm lân cận
+                for di in [-1, 0, 1]:
+                    for dj in [-1, 0, 1]:
+                        if di == 0 and dj == 0:
+                            continue
+                        ni, nj = i + di, j + dj
+                        if 0 <= ni < height and 0 <= nj < width:
+                            edge_index.append([node, ni * width + nj])
+        
+        edge_index = torch.tensor(edge_index).t().contiguous()
+        
+        # Thêm đặc trưng vị trí cho mỗi nút
+        pos_enc = torch.zeros(height * width, 2)
+        for i in range(height):
+            for j in range(width):
+                pos_enc[i * width + j] = torch.tensor([i / height, j / width])
+        
+        x = torch.cat([x, pos_enc.to(x.device)], dim=1)
+        
+        return x, edge_index
+    
+
+class PretrainedGCNKNN(nn.Module):
+    def __init__(self, device, pretrained_output_dim=2048, gcn_hidden_dim=256, gcn_output_dim=128):
+        super(PretrainedGCNKNN, self).__init__()
+        self.device = device
+        
+        # Pretrained ResNet50
+        self.pretrained = models.resnet152(weights='IMAGENET1K_V2')
+        self.pretrained = nn.Sequential(*list(self.pretrained.children())[:-1])  # Remove the last FC layer
+        self.pretrained = self.pretrained.to(device)  # Move pretrained model to device
+        for param in self.pretrained.parameters():
+            param.requires_grad = False
+        
+        # GCN layers
+        self.gcn1 = GCNConv(pretrained_output_dim, gcn_hidden_dim).to(device)
+        self.gcn2 = GCNConv(gcn_hidden_dim, gcn_output_dim).to(device)
+        
+        self.bn1 = nn.BatchNorm1d(gcn_hidden_dim).to(device)
+        self.bn2 = nn.BatchNorm1d(gcn_output_dim).to(device)
+
+        self.shape = gcn_output_dim
+
+    def custom_knn_graph(self, x, k):
+        # Compute pairwise distances
+        dist = torch.cdist(x, x)
+        
+        # Ensure k is not larger than the number of samples minus 1
+        k = min(k, x.size(0) - 1)
+        
+        # Get k nearest neighbors
+        _, idx = dist.topk(k + 1, largest=False, dim=-1)
+        # Remove self-loops
+        idx = idx[:, 1:]
+        
+        row = torch.arange(x.size(0), device=x.device).view(-1, 1).repeat(1, k)
+        edge_index = torch.stack([row.view(-1), idx.view(-1)], dim=0)
         
         return edge_index
+    
+    def forward(self, x):
+        # Extract features using pretrained model
+        with torch.no_grad():
+            x = self.pretrained(x)
+            x = x.view(x.size(0), -1)  # Flatten
+        
+        # Create graph
+        edge_index = self.custom_knn_graph(x, k=12).to(self.device)
+        
+        # Apply GCN with batch normalization
+        x = F.relu(self.bn1(self.gcn1(x, edge_index)))
+        x = self.bn2(self.gcn2(x, edge_index))
+        return x
+
+    def extract_features(self, images):
+        self.eval()
+        features = []
+        with torch.no_grad():
+            for image in images:
+                image = image.unsqueeze(0).to(self.device)
+                feature = self(image)
+                features.append(feature.cpu().numpy().flatten())
+        return np.array(features)
+    
