@@ -2,11 +2,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch_geometric.nn import GCNConv, global_mean_pool, SAGEConv, GATConv, global_max_pool,  knn_graph
-from torch_geometric.data import Data, Batch
 from torchvision import models, transforms
-from sklearn.neighbors import NearestNeighbors
 import numpy as np
-from torchvision.models import resnet50
+import faiss
 
 
 class MyEfficientNetB7(torch.nn.Module):
@@ -239,64 +237,100 @@ class MyGCNModel(nn.Module):
     
 
 class PretrainedGCNKNN(nn.Module):
-    def __init__(self, device, pretrained_output_dim=2048, gcn_hidden_dim=256, gcn_output_dim=128):
+    def __init__(self, device, pretrained_output_dim=2048, gcn_hidden_dim=2048, gcn_output_dim=128):
         super(PretrainedGCNKNN, self).__init__()
         self.device = device
-        
-        # Pretrained ResNet50
-        self.pretrained = models.resnet152(weights='IMAGENET1K_V2')
-        self.pretrained = nn.Sequential(*list(self.pretrained.children())[:-1])  # Remove the last FC layer
-        self.pretrained = self.pretrained.to(device)  # Move pretrained model to device
-        for param in self.pretrained.parameters():
-            param.requires_grad = False
-        
+
+        # Pretrained ResNet152
+        self.model = models.resnet152(weights='IMAGENET1K_V2')
+        self.model = nn.Sequential(*list(self.model.children())[:-1])  # Remove the last FC layer
+        self.model = self.model.to(device)
+
+        # Unfreeze some layers of ResNet
+        for param in list(self.model.parameters())[-10:]:
+            param.requires_grad = True
+
         # GCN layers
         self.gcn1 = GCNConv(pretrained_output_dim, gcn_hidden_dim).to(device)
-        self.gcn2 = GCNConv(gcn_hidden_dim, gcn_output_dim).to(device)
-        
+        self.gcn2 = GCNConv(gcn_hidden_dim, gcn_hidden_dim).to(device)
+        self.gcn3 = GCNConv(gcn_hidden_dim, gcn_output_dim).to(device)
+
+        # Batch normalization layers
         self.bn1 = nn.BatchNorm1d(gcn_hidden_dim).to(device)
-        self.bn2 = nn.BatchNorm1d(gcn_output_dim).to(device)
+        self.bn2 = nn.BatchNorm1d(gcn_hidden_dim).to(device)
+        self.bn3 = nn.BatchNorm1d(gcn_output_dim).to(device)
 
-        self.shape = gcn_output_dim
+        # Dropout layer
+        self.dropout = nn.Dropout(p=0.5)
 
-    def custom_knn_graph(self, x, k):
-        # Compute pairwise distances
+        # Linear layers for skip connections
+        self.skip_lin1 = nn.Linear(gcn_hidden_dim, pretrained_output_dim).to(device)
+        self.skip_lin2 = nn.Linear(gcn_hidden_dim, pretrained_output_dim).to(device)
+        self.skip_lin3 = nn.Linear(gcn_output_dim, pretrained_output_dim).to(device)
+
+        self.shape = pretrained_output_dim
+
+    def custom_knn_graph(self, x, k=10):
+        if x.dim() == 1:
+            x = x.unsqueeze(0)
+        
+        batch_size, num_features = x.size(0), x.size(1)
+        
         dist = torch.cdist(x, x)
-        
-        # Ensure k is not larger than the number of samples minus 1
-        k = min(k, x.size(0) - 1)
-        
-        # Get k nearest neighbors
+        k = min(k, batch_size - 1)
         _, idx = dist.topk(k + 1, largest=False, dim=-1)
-        # Remove self-loops
-        idx = idx[:, 1:]
-        
-        row = torch.arange(x.size(0), device=x.device).view(-1, 1).repeat(1, k)
-        edge_index = torch.stack([row.view(-1), idx.view(-1)], dim=0)
-        
+        idx = idx[:, 1:].contiguous() 
+
+        row = torch.arange(batch_size, device=x.device).view(-1, 1).repeat(1, k).view(-1)
+        col = idx.view(-1)
+
+        edge_index = torch.stack([row, col], dim=0)
         return edge_index
-    
-    def forward(self, x):
-        # Extract features using pretrained model
-        with torch.no_grad():
-            x = self.pretrained(x)
-            x = x.view(x.size(0), -1)  # Flatten
-        
-        # Create graph
-        edge_index = self.custom_knn_graph(x, k=12).to(self.device)
-        
-        # Apply GCN with batch normalization
-        x = F.relu(self.bn1(self.gcn1(x, edge_index)))
-        x = self.bn2(self.gcn2(x, edge_index))
-        return x
+
+    @staticmethod
+    def preprocess_image(image, device, image_size=224, mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]):
+        transform = transforms.Compose([
+            transforms.Resize(image_size),
+            transforms.CenterCrop(image_size),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=mean, std=std)
+        ])
+        return transform(image).to(device)
+
+    def forward(self, images):
+        return self.extract_features(images)
 
     def extract_features(self, images):
-        self.eval()
-        features = []
+        self.eval()  # Chuyển mô hình sang chế độ eval
+
         with torch.no_grad():
-            for image in images:
-                image = image.unsqueeze(0).to(self.device)
-                feature = self(image)
-                features.append(feature.cpu().numpy().flatten())
-        return np.array(features)
-    
+            features = self.model(images)
+            features = features.squeeze()
+
+        if features.dim() == 1:
+            features = features.unsqueeze(0)
+
+        # Normalize features
+        features = F.normalize(features, p=2, dim=1)
+
+        edge_index = self.custom_knn_graph(features, k=10).to(self.device)
+
+        # Apply GCN with skip connections and linear layers for dimension matching
+        x1 = F.relu(self.bn1(self.gcn1(features, edge_index)))
+        x1_skip = self.skip_lin1(x1) # Đưa x1 qua skip_lin1 trước khi cộng
+        x1 = x1_skip + features  # Ánh xạ và cộng với features
+        x1 = self.dropout(x1)
+
+        x2 = F.relu(self.bn2(self.gcn2(x1, edge_index)))
+        x2_skip = self.skip_lin2(x2) # Đưa x2 qua skip_lin2 trước khi cộng
+        x2 = x2_skip + features  # Ánh xạ và cộng với features
+        x2 = self.dropout(x2)
+
+        x3 = self.bn3(self.gcn3(x2, edge_index))
+        x3_skip = self.skip_lin3(x3) # Đưa x3 qua skip_lin3 trước khi cộng
+        x3 = x3_skip + features  # Ánh xạ và cộng với features
+
+        # Final normalization
+        x3 = F.normalize(x3, p=2, dim=1)
+
+        return x3.cpu().detach().numpy()
